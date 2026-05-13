@@ -1,6 +1,8 @@
 import streamlit as st
 import io
 import qrcode
+import tempfile
+import os
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import simpleSplit
@@ -8,19 +10,19 @@ from reportlab.lib import colors
 from datetime import datetime
 from PIL import Image
 
-def generate_qr_image(url, size=100):
-    """Genera una imagen QR desde una URL"""
+def generate_qr_image(url):
+    """Genera una imagen QR desde una URL y la guarda en un archivo temporal"""
     qr = qrcode.QRCode(version=1, box_size=10, border=4)
     qr.add_data(url)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
     img = img.convert("RGB")
     
-    # Guardar en buffer
-    buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
-    buffer.seek(0)
-    return buffer
+    # Guardar en archivo temporal
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    img.save(temp_file.name)
+    temp_file.close()
+    return temp_file.name
 
 def create_professional_pdf(datos):
     """Crea un PDF con diseño profesional similar al original"""
@@ -51,12 +53,15 @@ def create_professional_pdf(datos):
     c.drawCentredString(width/2, height - 60, f"Nº{datos['numero_certificado']}")
     
     # === QR CODE (esquina superior derecha) ===
-    if datos['qr_url']:
-        qr_buffer = generate_qr_image(datos['qr_url'])
-        qr_img = Image.open(qr_buffer)
-        c.drawImage(qr_buffer, width - margin - 60, height - 95, width=55, height=55, mask='auto')
-        c.setFont("Helvetica", 5)
-        c.drawCentredString(width - margin - 32, height - 102, "SCAN QR")
+    qr_temp_path = None
+    try:
+        if datos['qr_url']:
+            qr_temp_path = generate_qr_image(datos['qr_url'])
+            c.drawImage(qr_temp_path, width - margin - 60, height - 95, width=55, height=55)
+            c.setFont("Helvetica", 5)
+            c.drawCentredString(width - margin - 32, height - 102, "SCAN QR")
+    except Exception as e:
+        st.warning(f"No se pudo generar el QR: {e}")
     
     # Línea vertical separadora QR
     c.line(width - margin - 70, height - 35, width - margin - 70, height - 95)
@@ -193,6 +198,14 @@ def create_professional_pdf(datos):
     
     c.save()
     buffer.seek(0)
+    
+    # Limpiar archivo temporal del QR
+    if qr_temp_path and os.path.exists(qr_temp_path):
+        try:
+            os.remove(qr_temp_path)
+        except:
+            pass
+    
     return buffer
 
 
